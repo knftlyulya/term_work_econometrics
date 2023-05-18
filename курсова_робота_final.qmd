@@ -1,0 +1,792 @@
+---
+title: "Курсова робота"
+author: "Кірносенко Юлія"
+format: html
+editor: visual
+---
+
+```{R}
+library(wbstats)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(lmtest)
+```
+
+## Моделі для країн з високим рівнем доходу
+
+
+```{R}
+data_high_income <- read_csv("/Users/uliakirnosenko/ekonometrics/data_high_income.csv")
+
+model_high_income_1 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = data_high_income))
+model_high_income_1
+
+model_high_income_2 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS, data = data_high_income))
+model_high_income_2
+
+model_high_income_3 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.PROC, data = data_high_income))
+model_high_income_3
+
+
+```
+
+R2 --- скорегований коефіцієнт детермінації (adjusted R2). В порівнянні з класичним R2, його модифікація adjusted R2 штрафується на кількість змінних. Якщо додавати в модель предиктори, які не приносять суттєвого вкладу в пояснення залежної змінної, adjusted R2 буде зменшуватися
+
+### Модель №1 для країн з високим рівнем доходу
+
+$$GDP_{i} = \beta_{0} + \beta_{1}IC.BUS.NREG + \beta_{2}IC.REG.DURS + \beta_{3}IC.REG.PROC + u_{i}$$
+
+#### Перевірка на наявність гетероскедастичності для першої моделі
+
+```{r}
+data_high_income$residuals_1 <- residuals(model_high_income_1)
+```
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.BUS.NREG, residuals_1)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "New business registered", y = "e")
+```
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.REG.DURS, residuals_1)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "x2", y = "e")
+```
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.REG.PROC, residuals_1)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "x3", y = "e")
+```
+
+1. Тест Гольдфельда-Квандта
+```{r}
+data_high_income <- arrange(data_high_income, IC.BUS.NREG)
+
+est_model1 <- lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = head(data_high_income, 244))
+est_model2 <- lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = tail(data_high_income, 244))
+
+e_model1 <- residuals(est_model1)
+e_model2 <- residuals(est_model2)
+
+(sse_model1 <- sum(e_model1^2))
+
+(sse_model2 <- sum(e_model2^2))
+
+
+f_gq <- sse_model2/sse_model1
+f_gq
+
+p_value <- pf(q = f_gq, df1 = 240-3, df2 = 240-3, lower.tail = F)
+p_value
+```
+```{r}
+gqtest(model_high_income_1, data = data_high_income, fraction = 162)
+```
+
+Висновок: оскільки $p-value < 0.05$, то ми видхиляємо нулеву гіпотезу і робимо висновок, що в регресійній моделі присутня гетероскедастичність. 
+
+$F ≈ 19.83945$
+
+$p-value ≈ 9.589939e-90$
+
+2. Тест Бройша-Пагана
+
+```{r}
+bp_model_1 = lm(I(residuals_1^2) ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = data_high_income)
+
+bp_r2_1 = summary(bp_model_1)$r.squared
+bp_r2_1
+
+bp_stat_1 = 650 * bp_r2_1
+bp_stat_1
+
+pchisq(q = bp_stat_1, df = 3, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} = 0.0631465 * = 41.04522
+$$
+
+$$
+p-value ≈ 6.396361e-09 < 0.05
+$$
+
+3. Тест Уайта
+
+```{r}
+white_model_1 <- lm(
+  I(residuals_1^2) ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC + I(IC.BUS.NREG^2) + I(IC.REG.DURS^2) + I(IC.REG.PROC^2) + IC.BUS.NREG:IC.REG.DURS + IC.BUS.NREG:IC.REG.PROC + IC.REG.DURS:IC.REG.PROC,
+  data = data_high_income)
+
+(white_r2_1 = summary(white_model_1)$r.squared)
+(white_stat_1 = 650 * white_r2_1)
+
+pchisq(q = white_stat_1, df = 9, lower.tail = F)
+```
+
+
+Висновок: оскільки $p-value < 0.05$, то ми видхиляємо нулеву гіпотезу і робимо висновок, що в регресійній моделі присутня гетероскедастичність. 
+
+Окрім цього, p-value для $\beta_{0}$ більше за 0.05, тому модель не є ефективною
+
+#### Вихід із ситуації
+
+Лог-логарифмічна модель на основі першої моделі:
+
+```{r}
+model_high_income_1_log <- summary(lm(log(GDP) ~ log(IC.BUS.NREG) + IC.REG.DURS + IC.REG.PROC, data = data_high_income))
+model_high_income_1_log
+
+data_high_income$residuals_1_log <- residuals(model_high_income_1_log)
+
+```
+
+**Перевірка на гетероскадестичність**
+
+1. Тест Гольфреда-Кванта
+
+```{r}
+gqtest(model_high_income_1_log, data = data_high_income, fraction = 162)
+```
+
+2. Тест Бройша-Пагана
+
+```{r}
+bp_model_1_log = lm(I(residuals_1_log^2) ~ log(IC.BUS.NREG) + IC.REG.DURS + IC.REG.PROC, data = data_high_income)
+
+bp_r2_1_log = summary(bp_model_1_log)$r.squared
+bp_r2_1_log
+
+bp_stat_1_log = 650 * bp_r2_1_log
+bp_stat_1_log
+
+pchisq(q = bp_stat_1_log, df = 3, lower.tail = F)
+```
+
+3. Тест Уайта
+
+```{r}
+white_model_1_log <- lm(
+  I(residuals_1_log^2) ~ log(IC.BUS.NREG) + IC.REG.DURS + IC.REG.PROC + I(log(IC.BUS.NREG)^2) + I(IC.REG.DURS^2) + I(IC.REG.PROC^2) + log(IC.BUS.NREG):IC.REG.DURS + log(IC.BUS.NREG):IC.REG.PROC + IC.REG.DURS:IC.REG.PROC,
+  data = data_high_income)
+
+(white_r2_1_log = summary(white_model_1_log)$r.squared)
+(white_stat_1_log = 650 * white_r2_1_log)
+
+pchisq(q = white_stat_1_log, df = 9, lower.tail = F)
+```
+
+
+
+### Модель №2 для країн з високим рівнем доходу**
+
+$$GDP_{i} = \beta_{0} + \beta_{1}IC.BUS.NREG + \beta_{2}IC.REG.DURS + u_{i}$$
+#### Перевірка на наявність гетероскедастичності для другої моделі
+
+1. Тест Гольфреда-Кванта
+
+```{r}
+gqtest(model_high_income_2, data = data_high_income, fraction = 162)
+```
+
+$$F = 23.8091$$
+
+$$p-value < 2.2e-16$$
+
+Висновок: оскільки $p-value < 0.05$, то не вдається відхилити нульову гіпотезу, тому передбачається наявність гомоскедастичності.
+
+2. Тест Уайта
+
+```{r}
+data_high_income$residuals_2 <- residuals(model_high_income_2)
+
+white_model_2 <- lm(
+  I(residuals_2^2) ~ IC.BUS.NREG + IC.REG.DURS + I(IC.BUS.NREG^2) + I(IC.REG.DURS^2) + IC.BUS.NREG:IC.REG.DURS,
+  data = data_high_income)
+
+(white_r2_2 = summary(white_model_2)$r.squared)
+(white_stat_2 = 650 * white_r2_2)
+
+pchisq(q = white_stat_2, df = 5, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2 ≈ 7.114863
+$$
+
+$$
+p-value ≈ 0.212237 > 0.05
+$$
+
+Висновок: оскільки $p-value > 0.05$, то не вдається відхилити нульову гіпотезу, тому передбачається наявність гомоскедастичності.
+
+3. Тест Бройша-Пагана
+
+```{r}
+bp_model_2 = lm(I(residuals_2^2) ~ IC.BUS.NREG + IC.REG.DURS, data = data_high_income)
+
+bp_r2_2 = summary(bp_model_2)$r.squared
+bp_r2_2
+
+bp_stat_2 = 650 * bp_r2_2
+bp_stat_2
+
+pchisq(q = bp_stat_2, df = 2, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 3.81069
+$$
+
+$$
+p-value ≈ 0.1487713 > 0.05
+$$
+
+**Висновок**: оскільки $p-value > 0.05$, то не вдається відхилити нульову гіпотезу, тому передбачається наявність гомоскедастичності.
+
+Звідси, результати тестів Гольфреда-Кванта, Уайта і Бройша-Пагана про ймовірну наявність гомоскедастичності дозволяються провести аналіз на ефективність параметрів нашої моделі за допомогою методу найменших квадратів (МНК).
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.BUS.NREG, residuals_2)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "New business registered", y = "e")
+```
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.REG.DURS, residuals_2)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "x2", y = "e")
+```
+
+**Проблема**: p-value для параметру $\beta_{2}$ більше ніж 0.05, що говорить про неефективність даної моделі. Щоб вирішити це, створюємо іншу специфікацію даної моделі - лог-логарифмічну модель
+
+```{r}
+model_high_income_2_log <- summary(lm(log(GDP) ~ log(IC.BUS.NREG) + log(IC.REG.DURS), data = data_high_income))
+model_high_income_2_log
+```
+
+#### Перевірка на наявність гетероскедастичності для другої лог-логарифмічної моделі
+
+1. Тест Гольфреда-Кванта
+
+```{r}
+gqtest(model_high_income_2_log, data = data_high_income, fraction = 162)
+```
+
+2. Тест Уайта
+
+```{r}
+data_high_income$residuals_2_log <- residuals(model_high_income_2_log)
+
+white_model_2_log <- lm(
+  I(residuals_2_log^2) ~ log(IC.BUS.NREG) + log(IC.REG.DURS) + I(log(IC.BUS.NREG)^2) + I(log(IC.REG.DURS)^2) + log(IC.BUS.NREG):log(IC.REG.DURS),
+  data = data_high_income)
+
+(white_r2_2_log = summary(white_model_2_log)$r.squared)
+(white_stat_2_log = 650 * white_r2_2_log)
+
+pchisq(q = white_stat_2_log, df = 5, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 14.16292
+$$
+
+$$
+p-value ≈ 0.01460697 < 0.05
+$$
+
+3. Тест Бройша-Пагана
+
+```{r}
+bp_model_2_log = lm(I(residuals_2_log^2) ~ log(IC.BUS.NREG) + log(IC.REG.DURS), data = data_high_income)
+
+bp_r2_2_log = summary(bp_model_2_log)$r.squared
+bp_r2_2_log
+
+bp_stat_2_log = 650 * bp_r2_2_log
+bp_stat_2_log
+
+pchisq(q = bp_stat_2_log, df = 2, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 9.076584
+$$
+
+$$
+p-value ≈ 0.01069165 < 0.05
+$$
+
+Висновок: оскільки $p-value < 0.05$ в тестах Уайта і Бройша-Пагана, то в такому випадку ми відхиляємо нульову гіпотезу і робимо висновок, що є статистично значущі докази гетероскедастичності.
+
+#### ЗМНК для другої лог-логарифмічної моделі
+
+```{r}
+data_high_income_wls <- mutate(data_high_income,
+  GDP_wls =  GDP * sqrt(650),
+  IC.BUS.NREG_wls = IC.BUS.NREG * sqrt(650),
+  IC.REG.DURS_wls =  IC.REG.DURS * sqrt(650),
+  intercept_wls  = 1 * sqrt(650))
+
+wls_reg <- lm(
+  log(GDP_wls) ~ -1 + intercept_wls + log(IC.BUS.NREG_wls) + log(IC.REG.DURS_wls),
+  data = data_high_income_wls)
+summary(wls_reg)
+```
+
+
+
+### Модель №3 для країн з високим рівнем доходу
+
+$$GDP_{i} = \beta_{0} + \beta_{1}IC.BUS.NREG + \beta_{2}IC.REG.PROC + u_{i}$$
+#### Перевірка на наявність гетероскедастичності для третьої моделі
+
+```{r}
+model_high_income_3
+```
+
+1. Тест Гольфреда-Кванта
+
+```{r}
+gqtest(model_high_income_3, data = data_high_income, fraction = 162)
+```
+
+$$F = 19.363$$
+
+$$p-value < 2.2e-16$$
+
+2. Тест Уайта
+
+```{r}
+data_high_income$residuals_3 <- residuals(model_high_income_3)
+
+white_model_3 <- lm(
+  I(residuals_3^2) ~ IC.BUS.NREG + IC.REG.PROC + I(IC.BUS.NREG^2) + I(IC.REG.PROC^2) + IC.BUS.NREG:IC.REG.PROC, data = data_high_income)
+
+(white_r2_3 = summary(white_model_3)$r.squared)
+(white_stat_3 = 650 * white_r2_3)
+
+pchisq(q = white_stat_3, df = 5, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 6.318937
+$$
+
+$$
+p-value ≈ 0.2764101 
+$$
+$p-value > 0.05$
+
+3. Тест Бройша-Пагана
+
+```{r}
+bp_model_3 = lm(I(residuals_3^2) ~ IC.BUS.NREG + IC.REG.PROC, data = data_high_income)
+
+bp_r2_3 = summary(bp_model_3)$r.squared
+bp_r2_3
+
+bp_stat_3 = 650 * bp_r2_3
+bp_stat_3
+
+pchisq(q = bp_stat_3, df = 2, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 3.545156
+$$
+
+$$
+p-value ≈ 0.1698944 
+$$
+
+
+**Висновок**: оскільки $p-value > 0.05$ у всіх трьох тестах, то не вдається відхилити нульову гіпотезу, тому передбачається наявність гомоскедастичності.
+
+Звідси, результати тестів Гольфреда-Кванта, Уайта і Бройша-Пагана про ймовірну наявність гомоскедастичності дозволяють провести аналіз на ефективність параметрів нашої моделі за допомогою методу найменших квадратів (МНК).
+
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.BUS.NREG, residuals_3)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "New businesses registered (number)", y = "e")
+```
+
+```{r}
+ggplot(data_high_income,
+       aes(IC.REG.PROC, residuals_3)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "Start-up procedures to register a business (number)", y = "e")
+```
+
+ЗМНК
+
+```{r}
+data_high_income_wls_3 <- mutate(data_high_income,
+  GDP_wls =  GDP * sqrt(650),
+  IC.BUS.NREG_wls = IC.BUS.NREG * sqrt(650),
+  IC.REG.DURS_wls =  IC.REG.DURS * sqrt(650),
+  IC.REG.PROC_wls = IC.REG.PROC * sqrt(650),
+  intercept_wls  = 1 * sqrt(650))
+
+wls_reg_3 <- lm(log(GDP_wls) ~ -1 + intercept_wls + log(IC.BUS.NREG_wls) + IC.REG.PROC,
+  data = data_high_income_wls_3)
+summary(wls_reg_3)
+```
+
+
+
+**Аналіз параметрів третьої моделі**
+
+1. Критерій Ст'юдента
+
+```{r}
+model_high_income_3
+
+t_stat_0_3 = -4.624e+10 / 7.744e+10 
+t_stat_1_3 = 6.140e+06 / 3.522e+05
+t_stat_2_3 = 5.185e+10 / 1.073e+10
+
+t_stat_0_3
+t_stat_1_3
+t_stat_2_3
+```
+
+$$t_{\beta_{0}} = -0.5971074$$ 
+
+$$t_{\beta_{1}} = 17.43328$$ 
+
+$$t_{\beta_{2}} = 4.832246$$ 
+
+```{r}
+qt(0.05, 647)
+```
+
+$$t_{df}^{\alpha/2} = -1.647212$$
+
+$$|t_{\beta_{i}}|>t_{df}^{\alpha/2}$$
+
+**Висновок**: так як $|t_{\beta_{i}}|>t_{df}^{\alpha/2}$, відхиляємо нульову гіпотезу.
+
+2. Критерій Фішера
+
+```{R}
+f_tabl_3 <- qf(0.05, 2, 647)
+f_tabl_3
+```
+
+$$
+F_{stat} = 153.6
+$$
+
+$$
+F_{tabl} = 0.05129736
+$$
+
+$$
+153.6 > 0.05129736
+$$
+
+**Висновок**: оскільки $F_{stat}  > F_{tabl}$, відхиляємо нульову гіпотезу щодо параметрів третьої моделі. Це означає, що $\beta\_{i}$ для третьої моделі є статистично значущими і не дорівнюють нулю.
+
+3. Довірчі інтервали оцінок параметрів третьої моделі
+
+$$\hat{\beta_{i}} - SE(\hat{\beta_{i}})t_{df}^{\alpha/2}<\beta_{i}<\hat{\beta_{i}} + SE(\hat{\beta_{i}})t_{df}^{\alpha/2}$$
+
+```{r}
+left_0_3 = -4.624e+10 - (7.744e+10 * (-1.647212))
+right_0_3 = -4.624e+10 + (7.714e+10 * (-1.647212))
+
+left_1_3 = 6.140e+06 - (3.522e+05 * (-1.647212))
+right_1_3 = 6.140e+06 + (3.522e+05 * (-1.647212))
+
+left_2_3 = 5.185e+10 - (1.073e+10 * (-1.647212))
+right_2_3 = 5.185e+10 + (1.073e+10 * (-1.647212))
+
+left_0_3
+right_0_3
+
+left_1_3
+right_1_3
+
+left_2_3
+right_2_3
+```
+
+**З вірогідністю 95% параметри нашої моделі будуть знаходитись в таких інтервалах:**
+
+$$
+-173305933680 <\beta_{0}< 81320097280
+$$ 
+
+$$
+5559852 <\beta_{1}< 6720148
+$$
+
+$$
+34175415240 <\beta_{2}< 69524584760
+$$
+
+Тоді модель має такий вигляд: 
+
+$$
+GDP =  -4.624*10^{10} + 6.140*10^{6}*IC.BUS.NREG  + 5.185*10^{10}*IC.REG.PROC
+$$
+
+
+Тобто при збільшені кількості нових зареєстрованих підприємств за один рік на 1 в країнах з високим рівнем доходу, очікується, що ВВП буде збільшуватись на $6.140*10^{6}$ доларів США за умови незмінності інших предикторів.
+
+При збільшені кількості процедур, необхідних для початку бізнесу, на 1, очікується, що ВВП буде збільшуватись на $5.185*10^{10}$ доларів США.
+
+З цієї моделі можна зробити висновок, що на річний ріст ВВП країни впливає кількість нових зареєстрованих підприємств за кожен рік і кількость процедур, необхідних для початку бізнесу. Чим менше часу витрачається у підприємця на відкриття бізнесу, тим більша ймовірність того, що це буде збільшувати ВВП країни.
+
+
+## Моделі для країн з низьким рівнем доходу
+
+```{r}
+data_low_income <- read_csv("/Users/uliakirnosenko/ekonometrics/data_low_income.csv")
+
+summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = data_low_income))
+summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS, data = data_low_income))
+summary(lm(GDP ~ IC.BUS.NREG + IC.REG.PROC, data = data_low_income))
+
+summary(lm(log(GDP) ~ log(IC.BUS.NREG) + IC.REG.DURS + IC.REG.PROC, data = data_low_income))
+summary(lm(log(GDP) ~ log(IC.BUS.NREG) + IC.REG.DURS, data = data_low_income))
+summary(lm(log(GDP) ~ log(IC.BUS.NREG) + IC.REG.PROC, data = data_low_income))
+
+summary(lm(log(GDP) ~ IC.BUS.NREG + log(IC.REG.DURS) + IC.REG.PROC, data = data_low_income))
+summary(lm(log(GDP) ~ IC.BUS.NREG + log(IC.REG.DURS), data = data_low_income))
+summary(lm(log(GDP) ~ IC.BUS.NREG + log(IC.REG.PROC), data = data_low_income))
+
+```
+
+
+```{r}
+model_low_1 <- summary(lm(log(GDP) ~ IC.BUS.NREG + log(IC.REG.PROC), data = data_low_income))
+model_low_1
+```
+
+
+```{r}
+data_low_income$residuals_1 <- residuals(model_low_1)
+data_low_income <- arrange(data_low_income, IC.BUS.NREG)
+```
+
+```{r}
+ggplot(data_low_income,
+       aes(IC.BUS.NREG, residuals_1)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "New businesses registered (number)", y = "e")
+```
+
+```{r}
+ggplot(data_low_income,
+       aes(log(IC.REG.PROC), residuals_1)) +
+  geom_point(color = "chocolate4", size = 1) +
+  labs(x = "Start-up procedures to register a business (number)", y = "e")
+```
+
+### Перевірка на наявність гетероскедастичності для четвертої моделі
+
+1. Тест Гольфреда-Кванта
+
+```{r}
+gqtest(model_low_1, data = data_low_income, fraction = 37)
+```
+
+$$F = 0.76855 $$
+
+$$p-value = 0.8318$$
+
+$p-value > 0.05$
+
+2. Тест Уайта
+
+```{r}
+
+white_model_low_1 <- lm(
+  I(residuals_1^2) ~ IC.BUS.NREG + log(IC.REG.PROC) + I(IC.BUS.NREG^2) + I(log(IC.REG.PROC)^2) + IC.BUS.NREG:log(IC.REG.PROC), data = data_low_income)
+
+(white_r2_low_1 = summary(white_model_low_1)$r.squared)
+(white_stat_low_1 = 151 * white_r2_low_1)
+
+pchisq(q = white_stat_low_1, df = 5, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 9.503158
+$$
+
+$$
+p-value ≈ 0.09060105
+$$
+$p-value > 0.05$
+
+3. Тест Бройша-Пагана
+
+```{r}
+bp_model_low_1 = lm(I(residuals_1^2) ~ IC.BUS.NREG + log(IC.REG.PROC) , data = data_low_income)
+
+bp_r2_low_1 = summary(bp_model_low_1)$r.squared
+bp_r2_low_1
+
+bp_stat_low_1 = 151 * bp_r2_low_1
+bp_stat_low_1
+
+pchisq(q = bp_stat_low_1, df = 2, lower.tail = F)
+```
+
+$$
+LM = n * R_{e}^{2} ≈ 2.568723
+$$
+
+$$
+p-value ≈ 0.2768273 
+$$
+
+**Висновок**: оскільки $p-value > 0.05$ у всіх трьох тестах, то не вдається відхилити нульову гіпотезу, тому передбачається наявність гомоскедастичності в даній моделі.
+
+Звідси, результати тестів Гольфреда-Кванта, Уайта і Бройша-Пагана про ймовірну наявність гомоскедастичності дозволяють провести аналіз на ефективність параметрів нашої моделі за допомогою методу найменших квадратів (МНК).
+
+1.  **Критерій Ст'юдента**
+
+```{r}
+t_stat_0_low_1 = 2.324e+01/ 2.941e-01
+t_stat_1_low_1 = 1.098e-04 / 1.103e-05 
+t_stat_2_low_1 = -3.632e-01 / 1.553e-01
+
+t_stat_0_low_1 
+t_stat_1_low_1
+t_stat_2_low_1
+```
+
+
+$$t_{\beta_{0}} =  79.02074 $$
+$$t_{\beta_{1}} = 9.954669$$
+
+$$t_{\beta_{2}} =  -2.338699$$
+```{R}
+t_tabl <- qt(0.05, 148)
+t_tabl
+```
+
+$$t_{df}^{\alpha/2} = -1.655215$$
+
+$$|t_{\beta_{i}}|>t_{df}^{\alpha/2}$$
+
+
+**Висновок**: так як $|t_{\beta_{i}}|>t_{df}^{\alpha/2}$, відхиляємо нульову гіпотезу. Це означає, що $\beta\_{i}$ є статистично значущими і не дорівнюють нулю.
+
+2.  **Критерій Фішера**
+
+$$
+F_{stat} = 50.87
+$$
+
+```{R}
+f_tabl <- qf(0.05, 2, 148)
+f_tabl
+```
+
+
+
+$$F_{tabl} = 0.05131108$$
+$$
+F_{stat}  > F_{tabl}
+$$ 
+
+$$
+50.87 > 0.05131
+$$
+
+**Висновок**: оскільки значення $F_{stat}$ більше критичного значення при 0.05 рівні значущості, то нульова гіпотеза щодо параметрів даної моделі відкидається.
+
+3. Довірчі інтервали оцінок параметрів першої моделі
+
+$$\hat{\beta_{i}} - SE(\hat{\beta_{i}})t_{df}^{\alpha/2}<\beta_{i}<\hat{\beta_{i}} + SE(\hat{\beta_{i}})t_{df}^{\alpha/2}$$
+
+```{r}
+left_0_low_1 = 2.324e+01 - (2.941e-01 * (-1.655215))
+right_0_low_1 = 2.324e+01 + (2.941e-01 * (-1.655215))
+
+left_1_low_1 = 1.098e-04- (1.103e-05 * (-1.655215))
+right_1_low_1 = 1.098e-04 + (1.103e-05 * (-1.655215))
+
+left_2_low_1 = -3.632e-01 - (1.553e-01 * (-1.655215))
+right_2_low_1 = -3.632e-01 + (1.553e-01 * (-1.655215))
+
+left_0_low_1
+right_0_low_1
+
+left_1_low_1
+right_1_low_1
+
+left_2_low_1
+right_2_low_1
+```
+
+**З вірогідністю 95% параметри нашої моделі будуть знаходитись в таких інтервалах:**
+
+$$22.7532<\beta_{0}< 23.7268$$ 
+
+$$9.154298e-05<\beta_{1}<0.000128057$$
+
+$$
+-0.6202549 <\beta_{2}< -0.1061451
+$$
+
+Тоді модель для країн з низьким доходом має такий вигляд: 
+
+$$
+GDP = 23.24 + 0.0001103*IC.BUS.NREG  - 0.36*IC.REG.PROC
+$$
+
+
+Тобто при збільшені кількості нових зареєстрованих підприємств за один рік на 1 в країнах з низьким рівнем доходу, очікується, що ВВП буде збільшуватись на $0.0001103$ доларів США за умови незмінності інших предикторів. При збільшені кількості процедур, необхідних для початку бізнесу, на 1, очікується, що ВВП буде зменшуватись на $0.36$ доларів США.
+
+З цієї моделі можна зробити висновок, що на річний ріст ВВП країни може впливати кількість нових зареєстрованих бізнесів за кожен рік і кількость процедур, необхідних для початку бізнесу. Чим більше відкривається нових бізнесів і чим менше кількості процедур, що потрібні для відкриття бізнесу, то тим краще це впливає на економічне зростання в країнах з низьким рівнем доходу.
+
+
+## Моделі для країн з доходом нижче середнього
+
+```{r}
+data_lower_middle_income <- read_csv("/Users/uliakirnosenko/ekonometrics/data_lower_middle_income.csv")
+
+model_lower_middle_income_1 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = data_lower_middle_income))
+model_lower_middle_income_1
+
+model_lower_middle_income_2 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS, data = data_lower_middle_income))
+model_lower_middle_income_2
+
+model_lower_middle_income_3 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.PROC, data = data_lower_middle_income))
+model_lower_middle_income_3
+
+```
+
+
+## Моделі для країн з доходом вище середнього
+
+```{r}
+data_upper_middle_income <- read_csv("/Users/uliakirnosenko/ekonometrics/data_upper_middle_income.csv")
+
+model_upper_middle_income_1 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS + IC.REG.PROC, data = data_upper_middle_income))
+model_upper_middle_income_1
+
+model_upper_middle_income_2 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.DURS, data = data_upper_middle_income))
+model_upper_middle_income_2
+
+model_upper_middle_income_3 <- summary(lm(GDP ~ IC.BUS.NREG + IC.REG.PROC, data = data_upper_middle_income))
+model_upper_middle_income_3
+
+```
